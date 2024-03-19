@@ -1,2 +1,4 @@
 AM_HOME环境变量是在Makefile中通过硬编码设置的  
 ARCH环境变量选择的是x86_64-qemu
+WORNING! 由于ARCH环境变量选择的是x86_64-qemu，lab1没有在多核处理器上运行过（查看了abstract machine的源代码后，x86下似乎没有接收smp环境变量的代码，native是有的）。  
+在单核下测试程序在testforlab1，在control.h定义TEST宏后通过管道使用test检查。在大小内存，混合大小alloc情况下均已通过。
