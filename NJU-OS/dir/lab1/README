@@ -1,0 +1,2 @@
+AM_HOME环境变量是在Makefile中通过硬编码设置的  
+ARCH环境变量选择的是x86_64-qemu
