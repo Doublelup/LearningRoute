@@ -1,0 +1,1 @@
+1.colors on the screen: rgb,0x00(red)00(green)00(blue)
