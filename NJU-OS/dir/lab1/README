@@ -1,4 +1,5 @@
 AM_HOME环境变量是在Makefile中通过硬编码设置的  
 ARCH环境变量选择的是x86_64-qemu
 WORNING! 由于ARCH环境变量选择的是x86_64-qemu，lab1没有在多核处理器上运行过（查看了abstract machine的源代码后，x86下似乎没有接收smp环境变量的代码，native是有的）。  
-在单核下测试程序在testforlab1，在control.h定义TEST宏后通过管道使用test检查。在大小内存，混合大小alloc情况下均已通过。
+在单核下测试程序在testforlab1，在control.h定义TEST宏后通过管道使用test检查。在大小内存，混合大小alloc情况下均已通过。  
+update:已经在多处理器上运行过lab1的程序了，在x86_64-qemu下能够进行多处理器并发（不知道为什么之前不行，在新装的ubuntu20.04 6LTS上可以看到有多个cpu在同时运行，经过初步测试，多处理器下没有出现明显问题，但由于存在printf打印字符串的竞争，先前的testlab1的测试已不再适用）
