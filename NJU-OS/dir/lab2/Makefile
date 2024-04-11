@@ -5,13 +5,13 @@ INC_PATH       := include/ framework/
 export AM_HOME := $(HOME)/Downloads/AM
 ifeq ($(ARCH),)
 export ARCH    := x86_64-qemu
+#export ARCH    := native
 endif
-
 include $(AM_HOME)/Makefile
 
 .PHONY : debug
 debug :
-	qemu-system-x86_64 -S -s -serial none -nographic build/$(NAME)-x86_64-qemu
+	qemu-system-x86_64 -S -s  -nographic build/$(NAME)-x86_64-qemu
 ###include ../Makefile.lab
 ###image: git
 

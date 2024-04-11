@@ -6,28 +6,46 @@
 
 struct spinlock{
     char    name[SPINLOCKNAMESIZE];
+    int     cpu;
     int     state;//0 unlocked, 1 locked
+#ifdef ENHENCED
+    int     guard;//0 unlocked,1 locked
+    struct recordTasks *headTask;
+#endif
 };
 
-struct tasks{
-    struct spinlock taskslock;
-    task_t *headTask;
-    task_t *tailTask;
+typedef struct tasksNode{
+    task_t              *task;
+    struct tasksNode    *next;
+}tasksNode_t;
+
+struct tasks{//queue
+#ifdef TESTKMT
+    char            name[20];
+#endif
+    //struct spinlock taskslock;
+    tasksNode_t     *headNode;
+    struct spinlock headLock;
+    tasksNode_t     *tailNode;
+    struct spinlock tailLock;
 };
 
-struct tasks *runningTasks;
-struct tasks *readyTasks;//queue
+//struct tasks *runningTasks;
+struct tasks *readyTasks;
 struct tasks *blockedTasks;
 
-struct recordTask{
-    task_t *task;
-    struct recordTask *next;
-};
+typedef struct recordTask{
+    task_t              *task;
+    struct recordTask   *next;
+}recordTask_t;
 
-struct recordTasks{
-    struct spinlock taskslock;
-    struct recordTask *headTask;
-};
+typedef struct recordTasks{
+#ifdef TESTKMT
+    char                name[20];
+#endif
+    struct spinlock headLock;
+    struct recordTask *headNode;
+}recordTasks_t;
 
 struct recordTasks *aliveTasks;
 struct recordTasks *quitTasks;
@@ -42,16 +60,17 @@ enum taskstate{
 };
 
 struct task{
-    int                 index;
-    struct spinlock     tasklock;//only protect the state of the task
+    struct spinlock     stateLock;//only protect the state of the task
     enum taskstate      state;
     int                 ownedSemNum;
     char                name[TASKNAMESIZE];
-    struct task        *next;
     void              (*entry)(void*);//kernel thread doesn't return?
-    Context             context;
+    Context            *context;
     uint8_t            *stack;
 };
+
+extern struct task *spinTask;
+#define SPINTASK (spinTask+cpu_current())
 
 
 
@@ -60,13 +79,10 @@ struct task{
 struct semaphore{
     char                 name[SEMNAMESIZE+1];
     struct spinlock      semlock;
-    int                  value;
     int                  count;
-    struct recordTask   *waitqueuehead;
-    struct recordTask   *waitqueuetail;
+    struct tasks         semtasks;
 };
 
-struct spinlock emptyCtxLock;
-Context emptyCtx;
+task_t* recordTasks_query(task_t *task,recordTasks_t *recordTasks);
 
 #endif

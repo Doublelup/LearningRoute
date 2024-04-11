@@ -1,0 +1,129 @@
+cpu:0,ownedLockNumbfinc:0
+cpu:0,ownedLockNumafinc:1
+line:82 ::blockedTasks lock on cpu:0 ownedLockNum:1
+line:91 ::blockedTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+cpu:0,ownedLockNumbfdec:1
+cpu:0,ownedLockNumafdec:0
+cpu:0,ownedLockNumbfinc:0
+cpu:0,ownedLockNumafinc:1
+line:82 ::task1 lock on cpu:0 ownedLockNum:1
+line:91 ::task1 unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::blockedTasks lock on cpu:0 ownedLockNum:1
+line:91 ::blockedTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+cpu:0,ownedLockNumbfdec:1
+cpu:0,ownedLockNumafdec:0
+cpu:0,ownedLockNumbfinc:0
+cpu:0,ownedLockNumafinc:1
+line:82 ::task1 lock on cpu:0 ownedLockNum:1
+line:91 ::task1 unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::blockedTasks lock on cpu:0 ownedLockNum:1
+line:91 ::blockedTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+cpu:0,ownedLockNumbfdec:1
+cpu:0,ownedLockNumafdec:0
+cpu:0,ownedLockNumbfinc:0
+cpu:0,ownedLockNumafinc:1
+line:82 ::task1 lock on cpu:0 ownedLockNum:1
+line:91 ::task1 unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::blockedTasks lock on cpu:0 ownedLockNum:1
+line:91 ::blockedTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+cpu:0,ownedLockNumbfdec:1
+cpu:0,ownedLockNumafdec:0
+cpu:0,ownedLockNumbfinc:0
+cpu:0,ownedLockNumafinc:1
+line:82 ::task1 lock on cpu:0 ownedLockNum:1
+line:91 ::task1 unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::blockedTasks lock on cpu:0 ownedLockNum:1
+line:91 ::blockedTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+cpu:0,ownedLockNumbfinc:0
+cpu:0,ownedLockNumafinc:1
+line:82 ::blockedTasks lock on cpu:0 ownedLockNum:1
+line:91 ::blockedTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+cpu:0,ownedLockNumbfdec:1
+cpu:0,ownedLockNumafdec:0
+cpu:0,ownedLockNumbfinc:0
+cpu:0,ownedLockNumafinc:1
+line:82 ::task1 lock on cpu:0 ownedLockNum:1
+line:91 ::task1 unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::blockedTasks lock on cpu:0 ownedLockNum:1
+line:91 ::blockedTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+cpu:0,ownedLockNumbfdec:1
+cpu:0,ownedLockNumafdec:0
+cpu:0,ownedLockNumbfinc:0
+cpu:0,ownedLockNumafinc:1
+line:82 ::task1 lock on cpu:0 ownedLockNum:1
+line:91 ::task1 unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::blockedTasks lock on cpu:0 ownedLockNum:1
+line:91 ::blockedTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+cpu:0,ownedLockNumbfdec:1
+cpu:0,ownedLockNumafdec:0
+cpu:0,ownedLockNumbfinc:0
+cpu:0,ownedLockNumafinc:1
+line:82 ::task1 lock on cpu:0 ownedLockNum:1
+line:91 ::task1 unlock on cpu:0 ownedLockNum:2
+line:82 ::runningTasks lock on cpu:0 ownedLockNum:1
+line:91 ::runningTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::blockedTasks lock on cpu:0 ownedLockNum:1
+line:91 ::blockedTasks unlock on cpu:0 ownedLockNum:2
+line:82 ::readyTasks lock on cpu:0 ownedLockNum:1
+line:91 ::readyTasks unlock on cpu:0 ownedLockNum:2
+CURRENTCPU.ownedLockNum:1 cpu:0
+
+sample:2
+
+

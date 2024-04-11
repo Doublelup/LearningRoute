@@ -1,30 +1,73 @@
 #include <os.h>
 
+
+
 static void os_init()
 {
 	pmm->init();
 	kmt->init();
+
 }
 
 static void os_run()
 {
+	iset(false);
+#ifdef TESTKMT
+	char words[30]="task1 created by cpu#\n";
+	words[20]=cpu_current()+'0';
+	HELP(kmt->create(pmm->alloc(sizeof(task_t)),"task1",task1,words)==1,"error!\n");
+#endif
 	iset(true);
+	while(1){
+		yield();
+	}
+#ifndef TESTPMM
+	size_t size=0;
+	while(!size||size<sizeof(int))size=rand()%16*1024;
+	void *p=pmm->alloc(size);
+	void *q=pmm->alloc(size);
+	void *r=pmm->alloc(size);
+	while(p&&q&&r){
+		Print("size:%d,%p,%p,%p\n",size,p,q,r);
+		*(int*)p=1;
+		*(int*)p=1;
+		*(int*)p=1;
+		pmm->free(p);
+		size=0;
+		while(!size||size<sizeof(int))size=rand()%16*1024;
+		p=pmm->alloc(size);
+		q=pmm->alloc(size);
+		r=pmm->alloc(size);
+	}
+	Print("stop\n");
 	while(1);
+#endif
 	panic_on(1,"os_run return!\n");
 }
 
 static Context* os_trap(Event ev,Context *context)
 {
+	if(ev.event==EVENT_ERROR){
+		if((void*)ev.ref==NULL&&(void*)ev.cause==NULL){Print("yes, empty\n");}
+		Print("Unhandle signal '%s', badaddr = %p, cause = %p\n",
+        ev.msg, (void*)ev.ref, (void*)ev.cause);
+	}
+	//HELP(ev.event==EVENT_YIELD||ev.event==EVENT_SYSCALL||ev.event==EVENT_PAGEFAULT||ev.event==EVENT_ERROR,"event error:%d\n",ev.event);
+	HELP(ev.event==EVENT_ERROR,"event error:%d\n",ev.event);
 	Context *next=NULL;
-	cpu[cpu_current()].ownedLockNum++;
+	Context *ctx=NULL;
 	for(int i=0;i<IVTMAXSIZE;i++){
 		if((IVT->table)[i].event==EVENT_NULL||(IVT->table)[i].event==ev.event){
-			Context *ctx=(IVT->table)[i].handler(ev,context);
-			if(ctx)next=ctx;
+			ctx=(IVT->table)[i].handler(ev,context);
+			if(ctx){
+				next=ctx;
+				break;
+			}
 		}
 	}
-	cpu[cpu_current()].ownedLockNum--;
-	panic_on(cpu[cpu_current()].ownedLockNum!=0,"lock error!\n");
+	panic_on(next==NULL,"ret error!\n");
+	assert(next->rip);
+	//Print("1\n");
 	return next;
 }
 

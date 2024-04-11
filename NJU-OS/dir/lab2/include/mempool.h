@@ -15,8 +15,7 @@
         halt(0);\
     }\
     })
-#define CHECK(state)\
-    ({printf("check%d\t%s:%d\n",state,__FILE__,__LINE__);})
+
 
 extern Area heap;
 

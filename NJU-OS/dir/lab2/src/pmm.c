@@ -27,6 +27,7 @@ static void *kalloc_safe(size_t size)
   bool i=ienabled();
   iset(false);
   void* ret=kalloc(size);
+  if(ret!=NULL)PointerCheck(ret);
   if(i)iset(true);
   return ret;
 }
@@ -53,6 +54,7 @@ static void kfree(void *ptr)
 
 static void kfree_safe(void *ptr)
 {
+  assert(IN_RANGE(ptr,heap));
   bool i=ienabled();
   iset(false);
   kfree(ptr);

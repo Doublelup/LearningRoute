@@ -1,5 +1,19 @@
 #include<kmt.h>
 
+#define CHECKBLOCKEDNUM 5
+struct task *spinTask=NULL;
+
+void plinit(){
+    pl=0;
+}
+void pllock(){
+    while(atomic_xchg(&pl,1)==1);
+}
+void plunlock(){
+    atomic_xchg(&pl,0);
+}
+
+/*fuction declaretion*/
 static void kmt_spin_init(spinlock_t *lk,const char *name);
 static void kmt_spin_lock(spinlock_t *lk);
 static void kmt_spin_unlock(spinlock_t *lk);
@@ -13,42 +27,64 @@ static void kmt_teardown(task_t *task);
 
 static void cpu_init(void);
 static void IVT_init(void);
-static void tasks_init(void);
+static void stateManage_init(void);
 
-static void task_append(task_t* task,struct tasks* tasks);
-static task_t* task_delete(task_t* task,struct tasks *tasks);
-//static task_t* task_search(task_t* task,struct tasks *tasks);
+#ifdef TESTKMT
+static int tasks_init(struct tasks *tasks,const char *name);
+static int recordTasks_init(recordTasks_t *recordTasks,char *name);
+#else
+static int tasks_init(struct tasks *tasks);
+static int recordTasks_init(recordTasks_t *recordTasks);
+#endif
+static int tasks_enqueue(task_t *task,struct tasks *tasks);
+static task_t* tasks_dequeue(struct tasks *tasks);
+static int recordTasks_add(task_t *task,recordTasks_t *recordTasks);
+static task_t* recordTasks_delete(task_t *task,recordTasks_t *recordTasks);
 
-static struct recordTask* recordTask_search(task_t *obj,struct recordTask *recordtasks);
+
 static Context *kmt_context_save(Event ev,Context *context);
 static Context *kmt_schedule(Event ev,Context *context);
+static Context *kmt_yield_handler(Event ev,Context *context);
+static Context *kmt_syscall_handler(Event ev,Context *context);
+static Context *kmt_pagefault_handler(Event ev,Context *context);
+static Context *kmt_error_handler(Event ev,Context *context);
 
-static struct recordTask* recordTask_search(task_t *obj,struct recordTask *recordtasks)
-{
-    panic_on(!obj,"error!\n");
-    struct recordTask *asist=recordtasks;
-    while(asist!=NULL&&obj!=asist->task){
-        asist=asist->next;
-    }
-    return asist;
+/*implement*/
+void spintask(void *arg){
+    while(1);
+    assert(0);
+    return;
 }
+
 
 static void cpu_init(void){
     cpu=(struct CPU*)pmm->alloc(cpu_count()*sizeof(struct CPU));
-    panic_on(!cpu,"cpu_init error!\n");
     for(int i=0;i<cpu_count();i++){
         (cpu+i)->currentTask=NULL;
+        (cpu+i)->istate=true;
         (cpu+i)->ownedLockNum=0;
+        (cpu+i)->cpushot=NULL;
+    }
+    spinTask=(struct task*)pmm->alloc(cpu_count()*sizeof(struct task));
+    assert(spinTask!=NULL);
+    for(int i=0;i<cpu_count();i++){
+        (spinTask+i)->stack=(uint8_t*)pmm->alloc(STACKSIZE*sizeof(uint8_t));
+        assert((spinTask+i)->stack!=NULL);
+        (spinTask+i)->ownedSemNum=0;
+        strncpy((spinTask+i)->name,"spinTask",20);
+        (spinTask+i)->entry=spintask;
+        Area stack=(Area){(spinTask+i)->stack,(spinTask+i)->stack+STACKSIZE};
+        (spinTask+i)->context=kcontext(stack,spintask,NULL);
     }
     return;
 }
 
 static void IVT_init(void){
     IVT=(struct interruptVectorTable*)pmm->alloc(sizeof(struct interruptVectorTable));
-    panic_on(!IVT,"IVT_init error\n");
+    HELP(!IVT,"IVT_init error\n");
     //kmt_spin_init(&(IVT->ivtlock),"ivtlock");
     IVT->table=(IV*)pmm->alloc(IVTMAXSIZE*sizeof(IV));
-    panic_on(!IVT->table,"IVT_init error\n");
+    HELP(!IVT->table,"IVT_init error\n");
     for(int i=0;i<IVTMAXSIZE;i++){
         (IVT->table+i)->event=-1;
         (IVT->table+i)->handler=NULL;
@@ -57,416 +93,444 @@ static void IVT_init(void){
 }
 
 static void kmt_spin_init(spinlock_t *lk,const char *name){
-    panic_on(!lk,"lk error!\n");
+    HELP(strlen(name)>SPINLOCKNAMESIZE,"spinlock name too long\n");
     strncpy(lk->name,name,SPINLOCKNAMESIZE);
+    //Print("lockname:%s\n",lk->name);
     lk->state=0;
-    //lk->owner=-1;//-1 means no cpu own the lock
+    lk->cpu=-1;
     return;
 }
 
 static void kmt_spin_lock(spinlock_t *lk){
+    while(atomic_xchg(&lk->state,1)!=0){
+        // if(ienabled()==true){
+        //     yield();
+        // }
+    }
+    if(CURRENTCPU.ownedLockNum==0)CURRENTCPU.istate=ienabled();
     iset(false);
-    while(atomic_xchg(&(lk->state),1)==1);
-    cpu[cpu_current()].ownedLockNum+=1;
+    lk->cpu=cpu_current();
+    CURRENTCPU.ownedLockNum+=1;
     return;
 }
 
 static void kmt_spin_unlock(spinlock_t *lk){
-    panic_on(lk->state==0,"lock error!\n");
-    atomic_xchg(&(lk->state),0);
-    cpu[cpu_current()].ownedLockNum-=1;
-    panic_on(cpu[cpu_current()].ownedLockNum<0,"spin_unlock error\n");
-    panic_on(ienabled()==true,"iset state error!\n");
-    if(cpu[cpu_current()].ownedLockNum==0)iset(true);
-}
-
-static void kmt_init(void){
-    kmt_spin_init(&emptyCtxLock,"emptyCtxLock");
-    cpu_init();
-    IVT_init();
-    tasks_init();
-    os->on_irq(IVTMIN,EVENT_NULL,kmt_context_save);
-    os->on_irq(IVTMAX,EVENT_NULL,kmt_schedule);
+    HELP(atomic_xchg(&lk->state,1)!=1,"unlock error! lockname:%s\n",lk->name);
+    HELP(lk->cpu!=cpu_current(),"own error!\n");
+    atomic_xchg(&lk->state,0);
+    CURRENTCPU.ownedLockNum-=1;
+    HELP(CURRENTCPU.ownedLockNum<0,"unlock error!\n");
+    if(CURRENTCPU.ownedLockNum==0&&CURRENTCPU.istate==true)iset(true);
     return;
 }
 
-
-static int kmt_create(task_t *task, const char *name, void (*entry)(void *arg), void *arg){
-    int ret=0;
-#ifndef TESTKMT
-    if(!task||strlen(name)>TASKNAMESIZE)return ret;
-#else
-    panic_on(!task||strlen(name)>TASKNAMESIZE,"kmt_create error!\n");
+static void kmt_init(void){
+#ifdef TESTKMT
+    plinit();
 #endif
-    task->stack=(uint8_t*)pmm->alloc(STACKSIZE*sizeof(uint8_t));
-    if(!task->stack){//alloc error
-        return ret;
-    }
-    task->index=(uintptr_t)task;//choose the location to avoid repetition
-    strncpy(task->name,name,TASKNAMESIZE);
-    kmt_spin_init(&(task->tasklock),name);
-    task->state=READY;
-    task->ownedSemNum=0;
-    task->entry=entry;
-    Area stack=(Area){task->stack,task->stack+STACKSIZE};
-    task->context=*kcontext(stack,entry,arg);
-    task->next=NULL;
-    //add to readyTasks
-    kmt_spin_lock(&readyTasks->taskslock);
-    task_append(task,readyTasks);
-    kmt_spin_unlock(&readyTasks->taskslock);
-    //add to aliveTasks
-    kmt_spin_lock(&aliveTasks->taskslock);
-    struct recordTask *newTaskNode=(struct recordTask*)pmm->alloc(sizeof(struct recordTask));
-    panic_on(!newTaskNode,"newTask create error!\n");
-    newTaskNode->task=task;
-    newTaskNode->next=aliveTasks->headTask;
-    aliveTasks->headTask=newTaskNode;
-    kmt_spin_unlock(&aliveTasks->taskslock);
+    cpu_init();
+    IVT_init();
+    stateManage_init();
+    os->on_irq(IVTMIN,EVENT_NULL,kmt_context_save);
+    os->on_irq(IVTMAX,EVENT_NULL,kmt_schedule);
+    os->on_irq(IVTMAX-1,EVENT_ERROR,kmt_error_handler);
+    os->on_irq(IVTMAX-2,EVENT_PAGEFAULT,kmt_pagefault_handler);
+    os->on_irq(IVTMAX-3,EVENT_SYSCALL,kmt_syscall_handler);
+    os->on_irq(IVTMAX-4,EVENT_YIELD,kmt_yield_handler);
+    return;
+}
+
+/*0 create successfully, 1 error*/
+static int kmt_create(task_t *task, const char *name, void (*entry)(void *arg), void *arg){
+    HELP(!task,"task NULL\n");
+    HELP(strlen(name)>TASKNAMESIZE,"name too long");
+    //Print("kmt_create:%d\n",cpu_current());
     
-    return ret;
+    int rec=0;
+    if((rec=recordTasks_add(task,aliveTasks))==0){
+        task->stack=(uint8_t*)pmm->alloc(STACKSIZE*sizeof(uint8_t));
+        if(task->stack==NULL){
+            recordTasks_delete(task,aliveTasks);
+            return 1;
+        }
+        kmt_spin_init(&task->stateLock,name);
+        task->state=READY;
+        task->ownedSemNum=0;
+        strncpy(task->name,name,TASKNAMESIZE);
+        task->entry=entry;
+        Area stack=(Area){task->stack,task->stack+STACKSIZE};
+        task->context=kcontext(stack,entry,arg);
+        assert(task->context!=NULL);
+        assert(tasks_enqueue(task,readyTasks)==0);
+    }
+    else if(rec==1)return 1;
+    else assert(0);
+    return 0;
 }
 
 static void kmt_teardown(task_t *task){
-    kmt_spin_lock(&aliveTasks->taskslock);
-    struct recordTask* asist=aliveTasks->headTask;
-    struct recordTask* prior=NULL;
-    while(asist!=NULL&&asist->task!=task){
-        prior=asist;
-        asist=asist->next;
-    }
-    if(asist!=NULL){
-        if(prior){
-            prior->next=asist->next;
-            asist->next=NULL;
-        }
-        else{
-            aliveTasks->headTask=asist->next;
-            asist->next=NULL;
-        }
-    }
-    kmt_spin_lock(&aliveTasks->taskslock);
-    if(asist!=NULL){
-        kmt_spin_lock(&quitTasks->taskslock);
-        asist->next=quitTasks->headTask;
-        quitTasks->headTask=asist;
-        kmt_spin_unlock(&quitTasks->taskslock);
+    if(recordTasks_delete(task,aliveTasks)==task){
+        recordTasks_add(task,quitTasks);
     }
     return;
 }
 
 static void kmt_sem_init(sem_t *sem, const char *name, int value){
-#ifndef TESTKMT
-    if(strlen(name)>SEMNAMESIZE)return;
-    if(value<=0)return;
-#else
-    panic_on(strlen(name)>SEMNAMESIZE,"sem name too long!\n");
-    panic_on(value<=0,"value error!\n");
-#endif
+    assert(sem);
+    assert(strlen(name)<=SEMNAMESIZE);
     strncpy(sem->name,name,SEMNAMESIZE);
-    kmt_spin_init(&(sem->semlock),name);
-    sem->value=value;
+    kmt_spin_init(&sem->semlock,name);
     sem->count=value;
-    sem->waitqueuehead=NULL;
-    sem->waitqueuetail=NULL;
+#ifdef TESTKMT
+    tasks_init(&sem->semtasks,name);
+#else 
+    task_init(&sem->semtasks,name);
+#endif
     return;
 }
 
 static void kmt_sem_wait(sem_t *sem){
-    int flag=0;
     kmt_spin_lock(&sem->semlock);
-    if(sem->value>0){//aquire the sem
-        sem->value--;
-        kmt_spin_lock(&cpu[cpu_current()].currentTask->tasklock);
-        cpu[cpu_current()].currentTask->ownedSemNum++;
-        kmt_spin_unlock(&cpu[cpu_current()].currentTask->tasklock);
-        flag=1;
-    }
-    else{//join the waitqueue
-        //insert the task into queue
-        if(sem->waitqueuehead==NULL){//queue empty
-            panic_on(sem->waitqueuetail,"queue error!\n");
-            struct recordTask *nodeptr=(struct recordTask*)pmm->alloc(sizeof(struct recordTask));
-            nodeptr->task=cpu[cpu_current()].currentTask;
-            nodeptr->next=NULL;
-            sem->waitqueuehead=nodeptr;
-            sem->waitqueuetail=nodeptr;
-        }
-        else{
-            struct recordTask *nodeptr=(struct recordTask *)pmm->alloc(sizeof(struct recordTask));
-            nodeptr->task=cpu[cpu_current()].currentTask;
-            nodeptr->next=NULL;
-            sem->waitqueuetail->next=nodeptr;
-            sem->waitqueuetail=nodeptr;
-        }
+    sem->count--;
+    while(sem->count<0){
+        kmt_spin_lock(&CURRENTCPU.currentTask->stateLock);
+        assert(CURRENTCPU.currentTask->state==RUNNING);
+        CURRENTCPU.currentTask->state=BLOCKED;
+        assert(tasks_enqueue(CURRENTCPU.currentTask,&sem->semtasks)==0);
+        kmt_spin_unlock(&CURRENTCPU.currentTask->stateLock);
+        kmt_spin_unlock(&sem->semlock);
+        yield();
+        kmt_spin_lock(&sem->semlock);
     }
     kmt_spin_unlock(&sem->semlock);
-    if(flag==0){//fail to aquire the sem, change the state of the task
-        kmt_spin_lock(&cpu[cpu_current()].currentTask->tasklock);
-        //panic_on(cpu[cpu_current()].currentTask->state!=RUNNING,"task state error!\n");
-        if(cpu[cpu_current()].currentTask->state==RUNNING)cpu[cpu_current()].currentTask->state=BLOCKED;//avoid the situation that some thread invoke signal after unlock (the task is already in the wait queue), and be run on another cpu!
-        else{panic_on(cpu[cpu_current()].currentTask->state!=READY,"error!\n");}
-        kmt_spin_unlock(&cpu[cpu_current()].currentTask->tasklock);
-        yield();
-    }
     return;
 }
 
 static void kmt_sem_signal(sem_t *sem){
-    panic_on(!sem,"sem_signal error!\n");
     kmt_spin_lock(&sem->semlock);
-
     sem->count++;
-    struct recordTask *objnode=sem->waitqueuehead;
-    //assert that the sem->waitqueuehead must alive
-    if(objnode!=NULL){    
-        kmt_spin_lock(&aliveTasks->taskslock);
-        panic_on(recordTask_search(objnode->task,aliveTasks->headTask)==NULL,"error!\n");
-        kmt_spin_unlock(&aliveTasks->taskslock);
-
-        kmt_spin_lock(&objnode->task->tasklock);
-        objnode->task->state=READY;
-        kmt_spin_unlock(&objnode->task->tasklock);
-
-        if(sem->waitqueuehead==sem->waitqueuetail){
-            sem->waitqueuehead=NULL;
-            sem->waitqueuetail=NULL;
+    if(sem->count>=0){
+        task_t *task=tasks_dequeue(&sem->semtasks);
+        if(task){
+            kmt_spin_lock(&task->stateLock);
+            assert(task->state==BLOCKED);
+            task->state=READY;
+            kmt_spin_unlock(&task->stateLock);
         }
-        else{
-            sem->waitqueuehead=objnode->next;
-        }
-        pmm->free(objnode);
     }
-
     kmt_spin_unlock(&sem->semlock);
     return;
 }
 
-static void tasks_init(){
-    //init readyTasks
+static void stateManage_init(){
     readyTasks=(struct tasks*)pmm->alloc(sizeof(struct tasks));
-    panic_on(!readyTasks,"tasks_init error!\n");
-    
-    //init tasks
-    kmt_spin_init(&readyTasks->taskslock,"readyTasks");
-    readyTasks->headTask=NULL;
-    readyTasks->tailTask=NULL;
-
     blockedTasks=(struct tasks*)pmm->alloc(sizeof(struct tasks));
-    panic_on(!blockedTasks,"tasks_init error!\n");
-    kmt_spin_init(&blockedTasks->taskslock,"blockedTasks");
-    blockedTasks->headTask=NULL;
-    blockedTasks->tailTask=NULL;
-
-    runningTasks=(struct tasks*)pmm->alloc(sizeof(struct tasks));
-    panic_on(!runningTasks,"tasks_init error!\n");
-    kmt_spin_init(&runningTasks->taskslock,"runningTasks");
-    runningTasks->headTask=NULL;
-    runningTasks->tailTask=NULL;
-
-    quitTasks=(struct recordTasks*)pmm->alloc(sizeof(struct recordTasks));
-    panic_on(!quitTasks,"tasks_init error\n");
-    kmt_spin_init(&quitTasks->taskslock,"quitTasks");
-    quitTasks->headTask=NULL;
-
-    aliveTasks=(struct recordTasks*)pmm->alloc(sizeof(struct recordTasks));
-    panic_on(!aliveTasks,"tasks_init error!\n");
-    kmt_spin_init(&aliveTasks->taskslock,"aliveTasks");
-    aliveTasks->headTask=NULL;
-
+    aliveTasks=(recordTasks_t*)pmm->alloc(sizeof(recordTasks_t));
+    quitTasks=(recordTasks_t*)pmm->alloc(sizeof(recordTasks_t));
+    HELP(readyTasks==NULL,"alloc error\n");
+    HELP(blockedTasks==NULL,"alloc error\n");
+    HELP(aliveTasks==NULL,"alloc error\n");
+    HELP(quitTasks==NULL,"alloc error\n");
+#ifdef TESTKMT
+    tasks_init(readyTasks,"readyTasks");
+    tasks_init(blockedTasks,"blockedTasks");
+    recordTasks_init(aliveTasks,"aliveTasks");
+    recordTasks_init(quitTasks,"quitTasks");
+#else
+    tasks_init(readyTasks);
+    tasks_init(blockedTasks);
+    recordTasks_init(aliveTasks);
+    recordTasks_init(quitTasks);
+#endif   
     return;
 }
 
-static void task_append(task_t *task,struct tasks* tasks){//insert after the headTask
-    panic_on(!task||!tasks,"task_append error!\n");
-    //kmt_spin_lock(&tasks->taskslock);
-    if(tasks->headTask==NULL){//empty queue
-        panic_on(tasks->tailTask!=NULL,"queue error!\n");
-        task->next=NULL;
-        tasks->headTask=task;
-        tasks->tailTask=task;
-    }
-    else{
-        panic_on(tasks->tailTask==NULL,"queue error\n");
-        tasks->tailTask->next=task;
-        task->next=NULL;
-        tasks->tailTask=task;
-    }
-    //kmt_spin_unlock(&tasks->taskslock);
-    return;
+
+/*return the state of the ope, 0 ok, 1 error*/
+#ifdef TESTKMT
+static int tasks_init(struct tasks *tasks,const char *name){
+    HELP(!tasks,"tasks can't be NULL\n");
+    HELP(strlen(name)>20,"name too long\n");
+
+    tasksNode_t *asistNode=(tasksNode_t*)pmm->alloc(sizeof(tasksNode_t));
+    HELP(!asistNode,"alloc error\n");
+    strncpy(tasks->name,name,20);
+    kmt_spin_init(&tasks->headLock,name);
+    kmt_spin_init(&tasks->tailLock,name);
+
+    tasks->headNode=asistNode;
+    tasks->tailNode=asistNode;
+    asistNode->next=NULL;
+    asistNode->task=NULL;
+    return 0;
+}
+#else
+static int tasks_init(struct tasks *tasks){
+    if(!tasks)return 1;
+
+    tasksNode_t *asistNode=(tasksNode_t*)pmm->alloc(sizeof(tasksNode_t));
+    HELP(!asistNode,"alloc error\n");
+    if(!asistTask)return 1;
+
+    kmt_spin_init(&tasks->headLock,name);
+    kmt_spin_init(&tasks->tailLock,name);
+
+    tasks->headNode=asistNode;
+    tasks->tailNode=asistNode;
+    asistNode->next=NULL;
+    asistNode->task=NULL;
+    return 0;
+}
+#endif
+
+/*return:0 ok, 1 error*/
+static int tasks_enqueue(task_t *task,struct tasks *tasks){
+    assert(task!=NULL);
+    assert(tasks==blockedTasks||tasks==readyTasks);
+    kmt_spin_lock(&tasks->tailLock);
+    assert(tasks->tailNode!=NULL);
+    tasksNode_t *newNode=(tasksNode_t*)pmm->alloc(sizeof(tasksNode_t));
+    if(!newNode)return 1;
+    assert(newNode!=NULL);
+    newNode->task=task;
+    newNode->next=NULL;
+    tasks->tailNode->next=newNode;
+    tasks->tailNode=newNode;
+    assert(tasks->tailNode!=NULL);
+    kmt_spin_unlock(&tasks->tailLock);
+    return 0;
 }
 
-static task_t* task_delete(task_t *task,struct tasks *tasks){
-    panic_on(!task||!tasks,"task_delete error!\n");
-    //kmt_spin_lock(&tasks->taskslock);
-
+/*return the head, if empty NULL*/
+static task_t* tasks_dequeue(struct tasks *tasks){
+    assert(tasks==blockedTasks||tasks==readyTasks);
     task_t *ret=NULL;
-    task_t *prior=NULL;
-    task_t *objtask=tasks->headTask;
-    while(objtask&&objtask!=task){
-        prior=objtask;
-        objtask=objtask->next;
+    kmt_spin_lock(&tasks->headLock);
+    assert(tasks->headNode!=NULL);
+    tasksNode_t *newhead=tasks->headNode->next;
+    if(newhead!=NULL){//the queue is not empty
+        ret=newhead->task;
+        assert(ret!=NULL);
+        assert(IN_RANGE((void*)(tasks->headNode),heap));
+        pmm->free(tasks->headNode);
+        tasks->headNode=newhead;//note the tasks->headNode is used to asisit ,don't return the headNode->task
+        tasks->headNode->task=NULL;
     }
-    if(objtask==task){//exist in the queue
-        ret=task;
-        if(prior){//prior exist, not the headTask
-            if(task!=tasks->tailTask){
-                prior->next=objtask->next;
-                objtask->next=NULL;
-            }
-            else{
-                prior->next=objtask->next;
-                objtask->next=NULL;
-                tasks->tailTask=prior;
-            }
-        }
-        else{
-            if(task!=tasks->tailTask){
-                tasks->headTask=objtask->next;
-                objtask->next=NULL;
-            }
-            else{
-                tasks->headTask=NULL;
-                tasks->tailTask=NULL;
-            }
-        }
-    }
-
-    //kmt_spin_unlock(&tasks->taskslock);
+    assert(tasks->headNode!=NULL);
+    kmt_spin_unlock(&tasks->headLock);
     return ret;
 }
 
-//notice: you may hope search and use be atomic, so you have to lock and unlock the taskslock! 
-// task_t* task_search(task_t *task,struct tasks *tasks){//if the task is still in tasks, return task(locked), else return NULL
-//     panic_on(!task||!tasks,"task_search error!\n");
+#ifdef TESTKMT
+static int recordTasks_init(recordTasks_t *recordTasks,char *name){
+    assert(recordTasks==aliveTasks||recordTasks==quitTasks);
+    HELP(!recordTasks,"recordTasks can't be NULL\n");
+    HELP(strlen(name)>20,"name too long\n");
 
-//     //kmt_spin_lock(&tasks->taskslock);
-//     task_t *ret=NULL;
-//     task_t *objtask=tasks->headTask;
+    strncpy(recordTasks->name,name,20);
+    kmt_spin_init(&recordTasks->headLock,name);
+    recordTasks->headNode=NULL;
+    return 0;
+}
+#else
+static int recordTasks_init(recordTasks_t *recordTasks){
+        if(!recordTasks)return 1;
 
-//     while(objtask&&objtask!=task){
-//         objtask=objtask->next;
-//     }
+        kmt_spin_init(&recordTasks->headLock);
+        recordTasks->headNode=NULL;
+        return 0;
+}
+#endif
 
-//     if(objtask==task){
-//         ret=objtask;
-//     }
+/*return:0 ok, 1 error 2 repitition*/
+static int recordTasks_add(task_t *task,recordTasks_t *recordTasks){
+    assert(recordTasks==aliveTasks||recordTasks==quitTasks);
+    HELP(!task,"tasks NULL\n");
+    HELP(!recordTasks,"recordTasks NULL\n");
+    
+    //check if already exist
+    kmt_spin_lock(&recordTasks->headLock);
+    recordTask_t *newNode=recordTasks->headNode;
+    while(newNode&&newNode->task!=task)newNode=newNode->next;
+    if(newNode!=NULL){
+        HELP(newNode->task!=task,"error\n");
+        kmt_spin_unlock(&recordTasks->headLock);
+        return 2;
+    }
+    
+    newNode=(recordTask_t*)pmm->alloc(sizeof(recordTask_t));
+    HELP(!newNode,"alloc error\n");
+    newNode->task=task;
+    newNode->next=recordTasks->headNode;
+    recordTasks->headNode=newNode;
+    kmt_spin_unlock(&recordTasks->headLock);
+    return 0;
+}
 
-//     //kmt_spin_unlock(&tasks->taskslock);
-//     return ret;
-// }
-
-static Context *kmt_context_save(Event ev,Context *context){
-    if(cpu[cpu_current()].currentTask!=NULL){
-        task_t *currentTask=cpu[cpu_current()].currentTask;
-        kmt_spin_lock(&currentTask->tasklock);
-        if(currentTask->state==RUNNING){
-            if(currentTask->ownedSemNum==0){
-                kmt_spin_unlock(&currentTask->tasklock);
-            
-                //search quitTasks
-                kmt_spin_lock(&quitTasks->taskslock);
-                struct recordTask *asist=quitTasks->headTask;
-                struct recordTask *prior=NULL;
-                while(asist&&asist->task!=currentTask){
-                    prior=asist;
-                    asist=asist->next;
-                }
-                if(asist!=NULL){//if exist in the quitTasks, then delete the quitTask node
-                    if(prior){
-                        prior->next=asist->next;
-                        asist->next=NULL;
-                    }
-                    else{
-                        quitTasks->headTask=asist->next;
-                    }
-                    pmm->free(asist);
-                }
-                kmt_spin_unlock(&quitTasks->taskslock);
-                
-                if(asist!=NULL){
-                    //remove from runningTasks
-                    kmt_spin_lock(&runningTasks->taskslock);
-                    panic_on(task_delete(currentTask,runningTasks)!=currentTask,"error!\n");
-                    kmt_spin_unlock(&runningTasks->taskslock);
-
-                    //free the task
-                    pmm->free(currentTask->stack);
-                    pmm->free(currentTask);
-                }
+/*return NULL not exist in the list*/
+static task_t* recordTasks_delete(task_t *task,recordTasks_t *recordTasks){
+    assert(task!=NULL);
+    assert(recordTasks==aliveTasks||recordTasks==quitTasks);
+    task_t *ret=NULL;
+    kmt_spin_lock(&recordTasks->headLock);
+    recordTask_t *asistNode=recordTasks->headNode;
+    recordTask_t *prior=NULL;
+    while(asistNode){
+        if(asistNode->task==task){
+            //pick the node out
+            if(prior){
+                prior->next=asistNode->next;
             }
             else{
-                currentTask->state=READY;
-                kmt_spin_unlock(&currentTask->tasklock);
-
-                kmt_spin_lock(&runningTasks->taskslock);
-                task_append(currentTask,runningTasks);
-                kmt_spin_unlock(&runningTasks->taskslock);
+                recordTasks->headNode=recordTasks->headNode->next;
             }
+            ret=asistNode->task;
+            assert(IN_RANGE((void*)asistNode,heap));
+            pmm->free(asistNode);
+            break;
         }
-        else if(currentTask->state==BLOCKED){
-            kmt_spin_unlock(&currentTask->tasklock);
-            
-            kmt_spin_lock(&runningTasks->taskslock);
-            panic_on(task_delete(currentTask,runningTasks)!=currentTask,"error!\n");
-            kmt_spin_unlock(&runningTasks->taskslock);
-
-            kmt_spin_lock(&blockedTasks->taskslock);
-            task_append(currentTask,blockedTasks);
-            kmt_spin_unlock(&blockedTasks->taskslock);
-        }
-        else{
-            panic_on(currentTask->state!=READY,"error\n");
-            kmt_spin_unlock(&currentTask->tasklock);
-
-            kmt_spin_lock(&runningTasks->taskslock);
-            panic_on(task_delete(currentTask,runningTasks)!=currentTask,"error!\n");
-            kmt_spin_unlock(&runningTasks->taskslock);
-
-            kmt_spin_lock(&readyTasks->taskslock);
-            task_append(currentTask,readyTasks);
-            kmt_spin_unlock(&readyTasks->taskslock);            
-        }
+        prior=asistNode;
+        asistNode=asistNode->next;
     }
-    else{
-        kmt_spin_lock(&emptyCtxLock);
-        emptyCtx=*context;
-        kmt_spin_unlock(&emptyCtxLock);
-    }
+    kmt_spin_unlock(&recordTasks->headLock);
+    return ret;
+}
 
-    cpu[cpu_current()].currentTask=NULL;
-    return NULL;
+task_t* recordTasks_query(task_t *task,recordTasks_t *recordTasks){
+    task_t *ret=NULL;
+    kmt_spin_lock(&recordTasks->headLock);
+    recordTask_t *asisitNode=recordTasks->headNode;
+    while(asisitNode&&asisitNode->task!=task)asisitNode=asisitNode->next;
+    kmt_spin_unlock(&recordTasks->headLock);
+    if(asisitNode!=NULL)ret=asisitNode->task;
+    return ret;
+}
+
+static Context *kmt_context_save(Event ev,Context *context){
+    struct CPU *shot=(struct CPU *)pmm->alloc(sizeof(struct CPU));
+    HELP(shot==NULL,"alloc error\n");
+    assert(shot!=NULL);
+    *shot=CURRENTCPU;
+    shot->cpushot=CURRENTCPU.cpushot;
+    CURRENTCPU.cpushot=shot;
+    return NULL; 
+}
+
+static void cpu_restore_context(){
+    struct CPU *shot=CURRENTCPU.cpushot;
+    HELP(!shot,"cpushot error!\n");
+    CURRENTCPU=*shot;
+    assert(IN_RANGE((void*)shot,heap));
+    pmm->free(shot);
+    return;
 }
 
 static Context *kmt_schedule(Event ev,Context *context){
-    task_t *task=NULL;
-    Context *ret=NULL;
-    kmt_spin_lock(&readyTasks->taskslock);
-    if(readyTasks->headTask!=NULL){
-        if(readyTasks->headTask==readyTasks->tailTask){
-            task=readyTasks->headTask;
-            readyTasks->headTask=NULL;
-            readyTasks->tailTask=NULL;
-        }
-        else{
-            task=readyTasks->headTask;
-            readyTasks->headTask=readyTasks->headTask->next;
-        }
+    if(CURRENTCPU.currentTask!=NULL){
+        assert((uintptr_t)(context->rsp)>(uintptr_t)(CURRENTCPU.currentTask->stack));
     }
-    kmt_spin_unlock(&readyTasks->taskslock);
-    if(task!=NULL){
-        kmt_spin_lock(&runningTasks->taskslock);
-        task_append(task,runningTasks);
-        kmt_spin_unlock(&runningTasks->taskslock);
-        
-        cpu[cpu_current()].currentTask=task;
-        ret=&task->context;
+    assert(context!=NULL);
+    cpu_restore_context();
+    if(CURRENTCPU.currentTask!=NULL&&CURRENTCPU.currentTask!=SPINTASK){
+        //save the context into task, move the currentTask into tasks
+        kmt_spin_lock(&CURRENTCPU.currentTask->stateLock);
+        enum taskstate stateshot=CURRENTCPU.currentTask->state;
+        kmt_spin_unlock(&CURRENTCPU.currentTask->stateLock);
+        if(stateshot==RUNNING){
+            if(CURRENTCPU.currentTask->ownedSemNum==0&&recordTasks_delete(CURRENTCPU.currentTask,quitTasks)==CURRENTCPU.currentTask){
+                //in quitTasks, just free
+                assert(IN_RANGE((void*)(CURRENTCPU.currentTask->stack),heap));
+                pmm->free(CURRENTCPU.currentTask->stack);
+                CURRENTCPU.currentTask->stack=NULL;
+                assert(IN_RANGE((void*)(CURRENTCPU.currentTask),heap));
+                pmm->free(CURRENTCPU.currentTask);
+                CURRENTCPU.currentTask=NULL;
+            }
+            else{
+                CURRENTCPU.currentTask->context=context;
+                kmt_spin_lock(&CURRENTCPU.currentTask->stateLock);
+                CURRENTCPU.currentTask->state=READY;
+                kmt_spin_unlock(&CURRENTCPU.currentTask->stateLock);
+                HELP(tasks_enqueue(CURRENTCPU.currentTask,readyTasks)!=0,"enqueue error!\n");
+                CURRENTCPU.currentTask=NULL;
+            }
+        }
+        else if(stateshot==BLOCKED){
+            CURRENTCPU.currentTask->context=context;
+            HELP(tasks_enqueue(CURRENTCPU.currentTask,blockedTasks)!=0,"enqueue error!\n");
+            CURRENTCPU.currentTask=NULL;
+        }
+        else if(stateshot==READY){
+            CURRENTCPU.currentTask->context=context;
+            HELP(tasks_enqueue(CURRENTCPU.currentTask,readyTasks)!=0,"enqueue error!\n");
+            CURRENTCPU.currentTask=NULL;
+        }
+        else HELP(1,"state error!\n");
     }
     else{
-        ret=&emptyCtx;
+        if(CURRENTCPU.currentTask==SPINTASK){
+            SPINTASK->context=context;
+            CURRENTCPU.currentTask=NULL;
+        }
     }
-    return ret;
+    //move the waked task into readyTasks
+    task_t *asistTask=NULL;
+    for(int i=0;i<CHECKBLOCKEDNUM;i++){
+        asistTask=tasks_dequeue(blockedTasks);
+        if(asistTask==NULL)break;
+
+        assert(0);
+        
+        kmt_spin_lock(&asistTask->stateLock);
+        if(asistTask->state==READY){
+            kmt_spin_unlock(&asistTask->stateLock);
+            HELP(tasks_enqueue(asistTask,readyTasks)!=0,"enqueue error!\n");
+            break;
+        }
+        kmt_spin_unlock(&asistTask->stateLock);
+        HELP(tasks_enqueue(asistTask,blockedTasks)!=0,"enqueue error!\n");
+        asistTask=NULL;
+    }
+    if(asistTask!=NULL){
+        HELP(tasks_enqueue(asistTask,readyTasks)!=0,"enqueue error!\n");
+    }
+    //pick up a ready task
+    CURRENTCPU.currentTask=tasks_dequeue(readyTasks);
+    if(CURRENTCPU.currentTask){
+        kmt_spin_lock(&CURRENTCPU.currentTask->stateLock);
+        CURRENTCPU.currentTask->state=RUNNING;
+        kmt_spin_unlock(&CURRENTCPU.currentTask->stateLock);
+        assert(CURRENTCPU.currentTask->context!=NULL);
+        return CURRENTCPU.currentTask->context;
+    }
+    else {
+        CURRENTCPU.currentTask=SPINTASK;
+        return SPINTASK->context;
+    }
+    
 }
+
+static Context *kmt_yield_handler(Event ev,Context *context){
+    // cpu_restore_context();
+    // return context;
+    return NULL;
+}
+
+static Context *kmt_syscall_handler(Event ev,Context *context){
+    cpu_restore_context();
+    return context;
+}
+
+static Context *kmt_pagefault_handler(Event ev,Context *context){
+    cpu_restore_context();
+    return context;
+}
+
+static Context *kmt_error_handler(Event ev,Context *context){
+    cpu_restore_context();
+    return context;
+}
+
 
 MODULE_DEF(kmt) = {
 	.init = kmt_init,
@@ -479,3 +543,6 @@ MODULE_DEF(kmt) = {
     .sem_wait = kmt_sem_wait,
     .sem_signal = kmt_sem_signal,
 };
+
+
+
