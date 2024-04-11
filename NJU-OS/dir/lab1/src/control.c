@@ -141,6 +141,7 @@ int cpumempool_receive(cpumempool_ptr cpumempoolptr,void* objptr){//0 not found,
         return ret;
     }
 
+    spin_lock(&(cpumempoolptr->cpumemlock));
     pagenode_ptr headpagenode=cpumempoolptr->pages;
     pagenode_ptr tailpagenode=NULL;
     pagenode_ptr priornode=NULL;
@@ -208,6 +209,7 @@ int cpumempool_receive(cpumempool_ptr cpumempoolptr,void* objptr){//0 not found,
         priornode=tailpagenode;
         headpagenode=priornode->next;
     }
+    spin_unlock(&(cpumempoolptr->cpumemlock));
     return ret;
 }
 
