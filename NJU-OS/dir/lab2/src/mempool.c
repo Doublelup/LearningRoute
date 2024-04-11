@@ -1,4 +1,4 @@
-#include<control.h>
+#include<mempool.h>
 
 void spin_lock(lock_t* lock){
     int state=locked;
@@ -117,8 +117,8 @@ void* cpumempool_delivery(cpumempool_ptr cpumempoolptr,size_t realsize){
         if(ret==NULL){//need one more page
 
             node=memserver_delivery(0);
-            WRONG(node->own==1);
             if(node!=NULL){
+                WRONG(node->own==1);
                 node->next=cpumempoolptr->pages;
                 cpumempoolptr->pages=node;
                 ret=pagenode_delivery(node,realsize);

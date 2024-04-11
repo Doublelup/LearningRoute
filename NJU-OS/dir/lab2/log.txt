@@ -1,0 +1,26 @@
+# Building kernel-run [native]
+# Building am-archive [native]
+# Building klib-archive [native]
+# Creating image [native]
++ LD -> build/kernel-native
+/home/lup/Downloads/AM/dir/lab2/build/kernel-native
+Got 128 MiB heap: [0x1000000, 0x9000000)
+allocrealsize:	32	pointer:	0x11f9020
+allocrealsize:	8	pointer:	0x11f9058
+allocrealsize:	2048	pointer:	0x11f9800
+allocrealsize:	128	pointer:	0x11f9080
+allocrealsize:	128	pointer:	0x11f9180
+allocrealsize:	64	pointer:	0x11f9240
+allocrealsize:	64	pointer:	0x11f92c0
+allocrealsize:	16	pointer:	0x11f9120
+allocrealsize:	16	pointer:	0x11f9150
+allocrealsize:	128	pointer:	0x11f9380
+allocrealsize:	16	pointer:	0x11f9320
+allocrealsize:	1024	pointer:	0x11fa400
+allocrealsize:	16	pointer:	0x11fa020
+allocrealsize:	32	pointer:	0x11fa060
+task1 created by cpu0
+allocrealsize:	32	pointer:	0x11fa0a0
+Unhandle signal 'Segmentation fault' at rip = (nil), badaddr = (nil), cause = 0x1
+Assertion fail at /home/lup/Downloads/AM/am/src/native/cte.c:26
+Exit code = 01h
